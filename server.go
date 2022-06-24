@@ -12,14 +12,32 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
+
+var Logger *zap.SugaredLogger
+
+func init() {
+	var pre_logger *zap.Logger
+	config := zap.NewDevelopmentConfig()
+	config.OutputPaths = []string{"stdout"}
+	config.Level = zap.NewAtomicLevel()
+	config.Level.SetLevel(zapcore.DebugLevel)
+	pre_logger, _ = config.Build()
+	Logger = pre_logger.Sugar()
+}
 
 // HandshakeError describes an error with the handshake from the peer.
 type HandshakeError struct {
 	message string
 }
 
-func (e HandshakeError) Error() string { return e.message }
+func (e HandshakeError) Error() string {
+	Logger.Error("Received error %s\n", e.message)
+	return e.message
+}
 
 // Upgrader specifies parameters for upgrading an HTTP connection to a
 // WebSocket connection.
@@ -78,10 +96,13 @@ func (u *Upgrader) returnError(w http.ResponseWriter, r *http.Request, status in
 	err := HandshakeError{reason}
 	if u.Error != nil {
 		u.Error(w, r, status, err)
+		Logger.Error("Received error %s\n", err.message)
 	} else {
 		w.Header().Set("Sec-Websocket-Version", "13")
 		http.Error(w, http.StatusText(status), status)
+		Logger.Error("HTTP error %s\n", http.StatusText(status))
 	}
+
 	return nil, err
 }
 
@@ -298,6 +319,7 @@ func Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header,
 	u := Upgrader{ReadBufferSize: readBufSize, WriteBufferSize: writeBufSize}
 	u.Error = func(w http.ResponseWriter, r *http.Request, status int, reason error) {
 		// don't return errors to maintain backwards compatibility
+		Logger.Error("Upgrade encountered error %s", reason.Error())
 	}
 	u.CheckOrigin = func(r *http.Request) bool {
 		// allow all connections by default
